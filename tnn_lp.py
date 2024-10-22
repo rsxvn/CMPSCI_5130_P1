@@ -1,5 +1,9 @@
+__author__: str = "Rumandeep Singh"
+__email__: str = "rsxvn@umsl.edu"
+__instructor__: str = "Dr. Azim Ahmadzadeh"
+__date__: str = "10/21/2024"
+
 import pandas as pd
-from pandas import DataFrame
 from pulp import *
 
 
@@ -11,7 +15,7 @@ def main():
     file_name: str = 'tnn_data_4200_clicks.csv'
     click_val: int = int(file_name.split('_')[2])
 
-    data: DataFrame = pd.read_csv(file_name)
+    data: pd.DataFrame = pd.read_csv(file_name)
 
     # Converting DF columns to list
     articles: list[str] = data['Article'].tolist()
@@ -35,18 +39,24 @@ def main():
     lp = LpProblem("Project_1", LpMinimize)
 
     # Decision Variables
+
+    # Binary variable for selection of article:
     selected_report_vars = LpVariable.dict('dv_selected_article',
                                            articles,
                                            cat=LpBinary)
 
+    # Integer variable for keeping track of extra articles for each reporter
     extra_article_vars = LpVariable.dict('dv_extra_article',
                                          reporters,
                                          lowBound=0,
                                          cat=LpInteger)
 
+    # Binary variable to check if more than 1 articles for all types
     repeated_type_vars = LpVariable.dict('dv_repeated_type',
                                          types,
                                          cat=LpBinary)
+
+    # Auxilary Variables
 
     # Creating a dictionary to show similar to the mathematical formula
     article_reporter_dic: dict[str, dict[str, int]] = {}
@@ -62,68 +72,80 @@ def main():
     article_type_dic: dict[str, dict[str, int]] = {}
     for article in articles:
         article_type_dic[article] = {}
-        for ty in types:
-            if article_type[article] == ty:
-                article_type_dic[article][ty] = 1
+        for typ in types:
+            if article_type[article] == typ:
+                article_type_dic[article][typ] = 1
             else:
-                article_type_dic[article][ty] = 0
+                article_type_dic[article][typ] = 0
+
+    # Constraints
 
     # Constraint 1
     for reporter in reporters:
-        lp += (lpSum(article_reporter_dic[a][reporter]
-                     * selected_report_vars[a]
-                    for a in articles)
+        lp += (lpSum(article_reporter_dic[article][reporter]
+                     * selected_report_vars[article]
+                     for article in articles)
                >= 1, f"C1[{reporter}]")
 
     # Constraint 2
-    lp += (lpSum(clicks[a] * selected_report_vars[a]
-                for a in articles)
+    lp += (lpSum(clicks[article] * selected_report_vars[article]
+                 for article in articles)
            >= click_val, f"C2")
 
     # Constraint 3
     for typ in types:
-        lp += (lpSum(article_type_dic[a][typ] * selected_report_vars[a]
-                    for a in articles)
+        lp += (lpSum(article_type_dic[article][typ]
+                     * selected_report_vars[article]
+                     for article in articles)
                >= 1, f"C3[{typ}]")
 
     # Constraint 4
     for typ in types:
-        lp += ((lpSum(selected_report_vars[a] for a in articles)
-               - 2 * lpSum(article_type_dic[a][typ] * selected_report_vars[a]
-                           for a in articles))
+        lp += ((lpSum(selected_report_vars[article] for article in articles)
+                - 2 * lpSum(article_type_dic[article][typ]
+                            * selected_report_vars[article]
+                            for article in articles))
                >= 0, f"C4[{typ}]")
 
     # Constraint 5
     for reporter in reporters:
-        lp += (lpSum(article_reporter_dic[a][reporter]
-                     * selected_report_vars[a]
-                     for a in articles) - 1
-               == extra_article_vars[reporter], f"C5[{reporter}]")
+        lp += (lpSum(article_reporter_dic[article][reporter]
+                     * selected_report_vars[article]
+                     for article in articles) - extra_article_vars[reporter]
+               == 1, f"C5[{reporter}]")
 
     # Constraint 6
     # Broken the constraint in two parts to ensure 1 or 0
     num_of_articles = len(articles)
     for typ in types:
         # Constraint 6.1
-        lp += (lpSum(article_type_dic[a][typ] * selected_report_vars[a]
-                     for a in articles)
+        lp += (lpSum(article_type_dic[article][typ]
+                     * selected_report_vars[article]
+                     for article in articles)
                - (num_of_articles - 1) * repeated_type_vars[typ]
                <= 1, f"C6.1[{typ}]")
 
         # Constraint 6.2
-        lp += (lpSum(article_type_dic[a][typ] * selected_report_vars[a]
-                     for a in articles)
+        lp += (lpSum(article_type_dic[article][typ]
+                     * selected_report_vars[article]
+                     for article in articles)
                - 2 * repeated_type_vars[typ]
                >= 0, f"C6.2[{typ}]")
 
     # Objective function with constraint 5 & 6, uncomment to use
-    lp += ((lpSum(selected_report_vars[a] * cost[a] for a in articles))
+    lp += ((lpSum(selected_report_vars[article]
+                  * cost[article]
+                  for article in articles))
            + lpSum(
-                100 * extra_article_vars[reporter] for reporter in reporters)
-           - lpSum(115 * repeated_type_vars[typ] for typ in types))
+                100 * extra_article_vars[reporter]
+                for reporter in reporters)
+           - lpSum(115 * repeated_type_vars[typ]
+                   for typ in types))
 
     # Objective function without constraint 5 & 6, uncomment to use
-    # lp += (lpSum(selected_report_vars[a] * cost[a] for a in articles))
+    # lp += (lpSum(selected_report_vars[article]
+    #       * cost[article]
+    #       for article in articles))
 
     # Solve the problem
     lp.solve()
@@ -134,22 +156,21 @@ def main():
     # Print the objective function and constraints
     print("\nObjective Function:")
     print(lp.objective)
-
     print("\nConstraints:")
     for name, constraint in lp.constraints.items():
         print(f"{name}: {constraint}")
 
-    selected_articles = [i for i in articles
-                         if selected_report_vars[i].varValue == 1]
+    selected_articles = [article for article in articles
+                         if selected_report_vars[article].varValue == 1]
 
     print("\nSelected articles:")
-    for i in selected_articles:
+    for article in selected_articles:
         print(
-            f"Article {i}: "
-            f"Reporter {article_reporter[i]}"
-            f", Type {article_type[i]}"
-            f", Cost {cost[i]}"
-            f", Clicks {clicks[i]}")
+            f"Article {article}: "
+            f"Reporter {article_reporter[article]}"
+            f", Type {article_type[article]}"
+            f", Cost {cost[article]}"
+            f", Clicks {clicks[article]}")
 
     # Print the total cost
     print("\nTotal Cost:", value(lp.objective))
